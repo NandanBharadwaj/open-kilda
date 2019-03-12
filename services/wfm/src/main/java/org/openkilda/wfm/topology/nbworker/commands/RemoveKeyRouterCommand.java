@@ -13,21 +13,20 @@
  *   limitations under the License.
  */
 
-package org.openkilda.wfm.topology.nbworker;
+package org.openkilda.wfm.topology.nbworker.commands;
 
-public enum StreamType {
-    SWITCH,
-    ISL,
-    FLOW,
-    FLOWHS,
-    REROUTE,
-    FEATURE_TOGGLES,
-    KILDA_CONFIG,
-    NOTIFICATION,
-    TO_SPEAKER,
-    PATHS,
-    VALIDATION,
-    DISCO,
-    ERROR,
-    HISTORY
+import org.openkilda.messaging.command.CommandData;
+
+import lombok.EqualsAndHashCode;
+import lombok.Value;
+
+@Value
+@EqualsAndHashCode(callSuper = true)
+public class RemoveKeyRouterCommand extends CommandData {
+
+    private String key;
+
+    public RemoveKeyRouterCommand(String key) {
+        this.key = key;
+    }
 }
