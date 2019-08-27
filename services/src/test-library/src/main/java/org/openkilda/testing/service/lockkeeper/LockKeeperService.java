@@ -17,6 +17,7 @@ package org.openkilda.testing.service.lockkeeper;
 
 import org.openkilda.testing.model.topology.TopologyDefinition.Switch;
 import org.openkilda.testing.service.lockkeeper.model.ASwitchFlow;
+import org.openkilda.testing.service.lockkeeper.model.BlockRequest;
 
 import java.util.List;
 
@@ -35,11 +36,11 @@ public interface LockKeeperService {
 
     void portsDown(List<Integer> ports);
 
-    void stopFloodlight();
+    void stopFloodlight(String region);
 
-    void startFloodlight();
+    void startFloodlight(String region);
 
-    void restartFloodlight();
+    void restartFloodlight(String region);
 
     void knockoutSwitch(Switch sw);
 
@@ -47,13 +48,13 @@ public interface LockKeeperService {
 
     void setController(Switch sw, String controller);
 
-    void blockFloodlightAccessToPort(Integer port);
+    void blockFloodlightAccess(String region, BlockRequest address);
 
-    void unblockFloodlightAccessToPort(Integer port);
+    void unblockFloodlightAccess(String region, BlockRequest address);
 
-    void removeFloodlightAccessRestrictions();
+    void removeFloodlightAccessRestrictions(String region);
 
-    void knockoutFloodlight();
+    void knockoutFloodlight(String region);
 
-    void reviveFloodlight();
+    void reviveFloodlight(String region);
 }

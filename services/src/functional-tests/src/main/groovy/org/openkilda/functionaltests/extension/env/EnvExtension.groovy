@@ -11,6 +11,7 @@ import org.openkilda.messaging.info.event.IslChangeType
 import org.openkilda.messaging.info.event.SwitchChangeType
 import org.openkilda.messaging.model.system.FeatureTogglesDto
 import org.openkilda.testing.model.topology.TopologyDefinition
+import org.openkilda.testing.service.floodlight.ManagementFloodlightFactory
 import org.openkilda.testing.service.labservice.LabService
 import org.openkilda.testing.service.lockkeeper.LockKeeperService
 import org.openkilda.testing.service.northbound.NorthboundService
@@ -39,6 +40,9 @@ class EnvExtension extends AbstractGlobalExtension implements SpringContextListe
     @Autowired
     LockKeeperService lockKeeper
 
+    @Autowired
+    ManagementFloodlightFactory flFactory
+
     @Value('${spring.profiles.active}')
     String profile
     
@@ -59,6 +63,7 @@ class EnvExtension extends AbstractGlobalExtension implements SpringContextListe
         } else if (profile == "hardware") {
             labService.createHwLab(topology)
             log.info("Successfully redirected to hardware topology")
+            lockKeeper.removeFloodlightAccessRestrictions()
         } else {
             throw new RuntimeException("Provided profile '$profile' is unknown. Select one of the following profiles:" +
                     " hardware, virtual")
@@ -83,6 +88,7 @@ class EnvExtension extends AbstractGlobalExtension implements SpringContextListe
         }
         northbound.deleteAllFlows()
         labService.createLab(topology)
+        flFactory.getRegions().each { lockKeeper.removeFloodlightAccessRestrictions(it) }
 
         //wait until topology is discovered
         Wrappers.wait(TOPOLOGY_DISCOVERING_TIME) {

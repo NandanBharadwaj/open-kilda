@@ -229,8 +229,8 @@ switches"() {
         validateFlows(flow1, flow2)
 
         and: "Switch validation doesn't show any missing/excess rules and meters"
-        validateSwitches(flow1SwitchPair)
-        validateSwitches(flow2SwitchPair)
+        validateSwitches(switchPairs[0])
+        validateSwitches(switchPairs[1])
 
         and: "Delete flows"
         [flow1, flow2].each { flowHelper.deleteFlow(it.id) }
@@ -238,10 +238,14 @@ switches"() {
         where:
         endpointsPart << ["vlans", "ports", "switches"]
         description << ["src1 <-> dst2, dst1 <-> src2"] * 3
-        flow1SwitchPair << [getTopologyHelper().getNotNeighboringSwitchPair()] * 3
-        flow2SwitchPair << [getHalfDifferentNotNeighboringSwitchPair(flow1SwitchPair, "src")] * 3
-        flow1 << [getFirstFlow(flow1SwitchPair, flow2SwitchPair)] * 3
-        flow2 << [getSecondFlow(flow1SwitchPair, flow2SwitchPair, flow1)] * 3
+        switchPairs << [getTopologyHelper().getAllNotNeighboringSwitchPairs().inject(null) { result, switchPair ->
+            if (result) return result
+            def halfDifferent = getHalfDifferentNotNeighboringSwitchPair(switchPair, "src")
+            if (halfDifferent) result = [switchPair, halfDifferent]
+            return result
+        }] * 3
+        flow1 << [getFirstFlow(switchPairs[0], switchPairs[1])] * 3
+        flow2 << [getSecondFlow(switchPairs[0], switchPairs[1], flow1)] * 3
         [flow1Src, flow1Dst, flow2Src, flow2Dst] << [
                 [changePropertyValue(flow1.source, "vlanId", flow2.destination.vlanId),
                  changePropertyValue(flow1.destination, "vlanId", flow2.source.vlanId),
@@ -650,9 +654,15 @@ switches"() {
 
     def "Able to swap endpoints for two flows when all bandwidth on ISL is consumed"() {
         setup: "Create two flows with different source and the same destination switches"
-        def flow1SwitchPair = topologyHelper.getNeighboringSwitchPair()
-        def flow2SwitchPair = topologyHelper.getAllNeighboringSwitchPairs().find {
-            it.src != flow1SwitchPair.src && it.dst == flow1SwitchPair.dst
+        def (flow1SwitchPair, flow2SwitchPair) = topologyHelper.getAllNeighboringSwitchPairs().inject(null) { result, pair2 ->
+            if(result) return result
+            def pair1 = topologyHelper.getAllNeighboringSwitchPairs().find {
+                it.src != pair2.src && it.dst == pair2.dst
+            }
+            if(pair1) {
+                result = [pair1, pair2]
+            }
+            return result
         }
         def flow1 = getFirstFlow(flow1SwitchPair, flow2SwitchPair)
         def flow2 = getSecondFlow(flow1SwitchPair, flow2SwitchPair, flow1)
@@ -733,9 +743,15 @@ switches"() {
 
     def "Unable to swap endpoints for two flows when not enough bandwidth on ISL"() {
         setup: "Create two flows with different source and the same destination switches"
-        def flow1SwitchPair = topologyHelper.getNeighboringSwitchPair()
-        def flow2SwitchPair = topologyHelper.getAllNeighboringSwitchPairs().find {
-            it.src != flow1SwitchPair.src && it.dst == flow1SwitchPair.dst
+        def (flow1SwitchPair, flow2SwitchPair) = topologyHelper.getAllNeighboringSwitchPairs().inject(null) { result, pair2 ->
+            if(result) return result
+            def pair1 = topologyHelper.getAllNeighboringSwitchPairs().find {
+                it.src != pair2.src && it.dst == pair2.dst
+            }
+            if(pair1) {
+                result = [pair1, pair2]
+            }
+            return result
         }
         def flow1 = getFirstFlow(flow1SwitchPair, flow2SwitchPair)
         def flow2 = getSecondFlow(flow1SwitchPair, flow2SwitchPair, flow1)
@@ -813,9 +829,15 @@ switches"() {
     @Tags(LOW_PRIORITY)
     def "Able to swap endpoints for two flows when not enough bandwidth on ISL and ignore_bandwidth=true"() {
         setup: "Create two flows with different source and the same destination switches"
-        def flow1SwitchPair = topologyHelper.getNeighboringSwitchPair()
-        def flow2SwitchPair = topologyHelper.getAllNeighboringSwitchPairs().find {
-            it.src != flow1SwitchPair.src && it.dst == flow1SwitchPair.dst
+        def (flow1SwitchPair, flow2SwitchPair) = topologyHelper.getAllNeighboringSwitchPairs().inject(null) { result, pair2 ->
+            if(result) return result
+            def pair1 = topologyHelper.getAllNeighboringSwitchPairs().find {
+                it.src != pair2.src && it.dst == pair2.dst
+            }
+            if(pair1) {
+                result = [pair1, pair2]
+            }
+            return result
         }
         def flow1 = getFirstFlow(flow1SwitchPair, flow2SwitchPair)
         def flow2 = getSecondFlow(flow1SwitchPair, flow2SwitchPair, flow1)
@@ -896,9 +918,15 @@ switches"() {
 
     def "Unable to swap endpoints for two flows when one of them is inactive"() {
         setup: "Create two flows with different source and the same destination switches"
-        def flow1SwitchPair = topologyHelper.getNeighboringSwitchPair()
-        def flow2SwitchPair = topologyHelper.getAllNeighboringSwitchPairs().find {
-            it.src != flow1SwitchPair.src && it.dst == flow1SwitchPair.dst
+        def (flow1SwitchPair, flow2SwitchPair) = topologyHelper.getAllNeighboringSwitchPairs().inject(null) { result, pair2 ->
+            if(result) return result
+            def pair1 = topologyHelper.getAllNeighboringSwitchPairs().find {
+                it.src != pair2.src && it.dst == pair2.dst
+            }
+            if(pair1) {
+                result = [pair1, pair2]
+            }
+            return result
         }
         def flow1 = getFirstFlow(flow1SwitchPair, flow2SwitchPair)
         def flow2 = getSecondFlow(flow1SwitchPair, flow2SwitchPair, flow1)

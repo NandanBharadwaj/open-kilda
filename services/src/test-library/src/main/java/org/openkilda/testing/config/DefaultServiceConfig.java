@@ -38,7 +38,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Configuration
 @PropertySource("file:${kilda.config.file:kilda.properties}")
@@ -57,7 +59,7 @@ public class DefaultServiceConfig {
 
     @Bean(name = "floodlightRestTemplate")
     public RestTemplate floodlightRestTemplate(
-            @Value("${floodlight.endpoint}") String endpoint,
+            @Value("#{'${floodlight.controllers.management.endpoints}'.split(',')[0]}") String endpoint,
             @Value("${floodlight.username}") String username,
             @Value("${floodlight.password}") String password) {
         return buildRestTemplateWithAuth(endpoint, username, password);
@@ -76,9 +78,18 @@ public class DefaultServiceConfig {
         return buildLoggingRestTemplate();
     }
 
-    @Bean(name = "lockKeeperRestTemplate")
-    public RestTemplate lockKeeperRestTemplate(@Value("${lab-api.endpoint}") String baseEndpoint) {
-        return buildLoggingRestTemplate(baseEndpoint + "/api/");
+    @Bean(name = "lockKeeperRestTemplates")
+    public Map<String, RestTemplate> lockKeeperRestTemplates(
+            @Value("${lockkeeper.port}") Integer lockKeeperPort,
+            @Value("#{'${floodlight.regions}'.split(',')}") List<String> regions,
+            @Value("#{'${floodlight.controllers.management.endpoints}'.split(',')}") List<String> mgmtFloodlights) {
+        Map<String, RestTemplate> result = new HashMap<>();
+        for (int i = 0; i < mgmtFloodlights.size(); i++) {
+            String lockKeeperEndpoint = mgmtFloodlights.get(i)
+                    .replaceFirst("(.*):\\d+", "$1:" + lockKeeperPort);
+            result.put(regions.get(i), buildLoggingRestTemplate(lockKeeperEndpoint));
+        }
+        return result;
     }
 
     @Bean(name = "otsdbRestTemplate")
@@ -99,13 +110,19 @@ public class DefaultServiceConfig {
         return buildRestTemplateWithAuth(endpoint, username, password);
     }
 
-    private RestTemplate buildLoggingRestTemplate(String endpoint) {
+    /**
+     * Build rest template with enabled logging support.
+     */
+    public static RestTemplate buildLoggingRestTemplate(String endpoint) {
         final RestTemplate restTemplate = buildLoggingRestTemplate();
         restTemplate.setUriTemplateHandler(new DefaultUriBuilderFactory(endpoint));
         return restTemplate;
     }
 
-    private RestTemplate buildLoggingRestTemplate() {
+    /**
+     * Build rest template with enabled logging support.
+     */
+    public static RestTemplate buildLoggingRestTemplate() {
         final RestTemplate restTemplate = new RestTemplate(new BufferingClientHttpRequestFactory(
                 new HttpComponentsClientHttpRequestFactory()));
         List<ClientHttpRequestInterceptor> interceptors = restTemplate.getInterceptors();
@@ -114,7 +131,10 @@ public class DefaultServiceConfig {
         return restTemplate;
     }
 
-    private RestTemplate buildRestTemplateWithAuth(String endpoint, String username, String password) {
+    /**
+     * Build rest template with enabled logging support and basic auth.
+     */
+    public static RestTemplate buildRestTemplateWithAuth(String endpoint, String username, String password) {
         RestTemplate restTemplate = buildLoggingRestTemplate(endpoint);
         restTemplate.getInterceptors().add(new BasicAuthorizationInterceptor(username, password));
         return restTemplate;

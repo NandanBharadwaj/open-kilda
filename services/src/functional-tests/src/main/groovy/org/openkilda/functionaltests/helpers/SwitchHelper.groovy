@@ -1,9 +1,9 @@
 package org.openkilda.functionaltests.helpers
 
-import org.openkilda.messaging.model.SpeakerSwitchDescription
 import org.openkilda.model.Cookie
 import org.openkilda.model.SwitchFeature
 import org.openkilda.model.SwitchId
+import org.openkilda.northbound.dto.v1.switches.SwitchDto
 import org.openkilda.northbound.dto.v1.switches.SwitchValidationResult
 import org.openkilda.testing.model.topology.TopologyDefinition.Switch
 import org.openkilda.testing.service.database.Database
@@ -46,14 +46,13 @@ class SwitchHelper {
         this.database = database
     }
 
-    @Memoized
-    static SpeakerSwitchDescription getDetails(Switch sw) {
-        northbound.getSwitch(sw.dpId).switchView.description
+    static String getDescription(Switch sw) {
+        sw.nbFormat().description
     }
 
     @Memoized
-    static String getDescription(Switch sw) {
-        northbound.getSwitch(sw.dpId).description
+    static SwitchDto nbFormat(Switch sw) {
+        northbound.getSwitch(sw.dpId)
     }
 
     @Memoized
@@ -67,7 +66,7 @@ class SwitchHelper {
                     Cookie.VERIFICATION_UNICAST_RULE_COOKIE, Cookie.DROP_VERIFICATION_LOOP_RULE_COOKIE,
                     Cookie.CATCH_BFD_RULE_COOKIE, Cookie.ROUND_TRIP_LATENCY_RULE_COOKIE,
                     Cookie.VERIFICATION_UNICAST_VXLAN_RULE_COOKIE]
-        } else if((sw.noviflow || sw.details.manufacturer == "E") && sw.wb5164){
+        } else if((sw.noviflow || sw.nbFormat().manufacturer == "E") && sw.wb5164){
             return [Cookie.DROP_RULE_COOKIE, Cookie.VERIFICATION_BROADCAST_RULE_COOKIE,
                     Cookie.VERIFICATION_UNICAST_RULE_COOKIE, Cookie.DROP_VERIFICATION_LOOP_RULE_COOKIE,
                     Cookie.CATCH_BFD_RULE_COOKIE]
@@ -80,22 +79,22 @@ class SwitchHelper {
     }
 
     static boolean isCentec(Switch sw) {
-        sw.details.manufacturer.toLowerCase().contains("centec")
+        sw.nbFormat().manufacturer.toLowerCase().contains("centec")
     }
 
     static boolean isNoviflow(Switch sw) {
-        sw.details.manufacturer.toLowerCase().contains("noviflow")
+        sw.nbFormat().manufacturer.toLowerCase().contains("noviflow")
     }
 
     static boolean isVirtual(Switch sw) {
-        sw.details.manufacturer.toLowerCase().contains("nicira")
+        sw.nbFormat().manufacturer.toLowerCase().contains("nicira")
     }
 
     /**
      * A hardware with 100GB ports. Due to its nature sometimes requires special actions from Kilda
      */
     static boolean isWb5164(Switch sw) {
-        sw.details.hardware =~ "WB5164"
+        sw.nbFormat().hardware =~ "WB5164"
     }
 
     @Memoized
@@ -119,8 +118,8 @@ class SwitchHelper {
      */
     def getExpectedBurst(SwitchId sw, long rate) {
         def descr = getDescription(sw).toLowerCase()
-        def details = northbound.getSwitch(sw).switchView.description
-        if (descr.contains("noviflow") || details.hardware =~ "WB5164") {
+        def hardware = northbound.getSwitch(sw).hardware
+        if (descr.contains("noviflow") || hardware =~ "WB5164") {
             return (rate * NOVIFLOW_BURST_COEFFICIENT - 1).setScale(0, RoundingMode.CEILING)
         } else if (descr.contains("centec")) {
             def burst = (rate * burstCoefficient).toBigDecimal().setScale(0, RoundingMode.FLOOR)

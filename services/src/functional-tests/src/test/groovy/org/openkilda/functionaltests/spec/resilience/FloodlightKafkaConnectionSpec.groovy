@@ -25,7 +25,7 @@ class FloodlightKafkaConnectionSpec extends HealthCheckSpecification {
     def "System survives temporary connection outage between Floodlight and Kafka"() {
         when: "Controller loses connection to Kafka"
         def flOut = false
-        lockKeeper.knockoutFloodlight()
+        regions.each { lockKeeper.knockoutFloodlight(it) }
         flOut = true
 
         then: "Right before controller alive timeout switches are still active and links are discovered"
@@ -47,7 +47,7 @@ class FloodlightKafkaConnectionSpec extends HealthCheckSpecification {
         northbound.getActiveLinks().size() == topology.islsForActiveSwitches.size() * 2
 
         when: "Controller restores connection to Kafka"
-        lockKeeper.reviveFloodlight()
+        regions.each { lockKeeper.reviveFloodlight(it) }
         flOut = false
 
         then: "All links are discovered and switches become active"
@@ -68,12 +68,12 @@ class FloodlightKafkaConnectionSpec extends HealthCheckSpecification {
         flowHelper.deleteFlow(flow.id)
 
         cleanup:
-        flOut && lockKeeper.reviveFloodlight()
+        flOut && regions.each { lockKeeper.reviveFloodlight(it) }
     }
 
     def "System can detect switch changes if they happen while Floodlight was disconnected after it reconnects"() {
         when: "Controller loses connection to kafka"
-        lockKeeper.knockoutFloodlight()
+        regions.each { lockKeeper.knockoutFloodlight(it) }
         Wrappers.wait(floodlightAliveTimeout + WAIT_OFFSET) { assert northbound.activeSwitches.size() == 0 }
 
         and: "Switch port for certain ISL goes down"
@@ -82,7 +82,7 @@ class FloodlightKafkaConnectionSpec extends HealthCheckSpecification {
         lockKeeper.portsDown([isl.aswitch.inPort])
 
         and: "Controller restores connection to kafka"
-        lockKeeper.reviveFloodlight()
+        regions.each { lockKeeper.reviveFloodlight(it) }
 
         then: "System detects that certain port has been brought down and fails the related link"
         Wrappers.wait(WAIT_OFFSET) {

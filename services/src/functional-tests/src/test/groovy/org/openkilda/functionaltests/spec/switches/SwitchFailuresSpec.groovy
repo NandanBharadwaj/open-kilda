@@ -1,22 +1,26 @@
 package org.openkilda.functionaltests.spec.switches
 
 import static org.junit.Assume.assumeTrue
-import static org.openkilda.functionaltests.extension.tags.Tag.SMOKE
 import static org.openkilda.functionaltests.extension.tags.Tag.VIRTUAL
 import static org.openkilda.testing.Constants.WAIT_OFFSET
 
 import org.openkilda.functionaltests.HealthCheckSpecification
 import org.openkilda.functionaltests.extension.tags.Tags
+import org.openkilda.functionaltests.helpers.FlowHelperV2
 import org.openkilda.functionaltests.helpers.PathHelper
 import org.openkilda.functionaltests.helpers.Wrappers
+import org.openkilda.messaging.error.MessageError
 import org.openkilda.messaging.info.event.IslChangeType
+import org.openkilda.messaging.info.event.SwitchChangeType
 import org.openkilda.messaging.payload.flow.FlowState
 import org.openkilda.testing.model.topology.TopologyDefinition.Switch
+import org.openkilda.testing.service.northbound.NorthboundServiceV2
 
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.http.HttpStatus
+import org.springframework.web.client.HttpClientErrorException
 import spock.lang.Ignore
 import spock.lang.Narrative
-
-import java.util.concurrent.TimeUnit
 
 @Narrative("""
 This spec verifies different situations when Kilda switches suddenly disconnect from the controller.
@@ -24,10 +28,15 @@ Note: For now it is only runnable on virtual env due to no ability to disconnect
 """)
 @Tags(VIRTUAL)
 class SwitchFailuresSpec extends HealthCheckSpecification {
-    @Tags(SMOKE)
-    def "ISL is still able to properly fail even after switches were reconnected"() {
+    @Autowired
+    FlowHelperV2 flowHelperV2
+    @Autowired
+    NorthboundServiceV2 northboundV2
+
+    def "ISL is still able to properly fail even if switches have reconnected"() {
         given: "A flow"
         def isl = topology.getIslsForActiveSwitches().find { it.aswitch && it.dstSwitch }
+        assumeTrue("No a-switch ISL found for the test", isl.asBoolean())
         def flow = flowHelper.randomFlow(isl.srcSwitch, isl.dstSwitch)
         flowHelper.addFlow(flow)
 
@@ -70,78 +79,120 @@ class SwitchFailuresSpec extends HealthCheckSpecification {
         }
     }
 
-    @Ignore("This is a known Kilda limitation and feature is not implemented yet.")
+    @Ignore("Not ready yet")
+    //expected to work only via v2 API
     def "System can handle situation when switch reconnects while flow is being created"() {
-        given: "Source and destination switches"
+
+        when: "Start creating a flow between switches and lose connection to src before rules are set"
         def (Switch srcSwitch, Switch dstSwitch) = topology.activeSwitches
-
-        when: "Start creating a flow between these switches"
-        def flow = flowHelper.randomFlow(srcSwitch, dstSwitch)
-        def addFlow = new Thread({ northbound.addFlow(flow) })
-        addFlow.start()
-
-        and: "One of the switches goes down without waiting for flow's UP status"
+        def flow = flowHelperV2.randomFlow(srcSwitch, dstSwitch)
+        northboundV2.addFlow(flow)
+        sleep(50)
         lockKeeper.knockoutSwitch(srcSwitch)
-        addFlow.join()
 
-        and: "Goes back up in 2 seconds"
-        TimeUnit.SECONDS.sleep(2)
+        then: "Flows is 'In progress' retrying to install rules while switch is still marked as ACTIVATED"
+        Wrappers.wait(WAIT_OFFSET) {
+            assert northbound.getSwitch(srcSwitch.dpId).state == SwitchChangeType.DEACTIVATED
+            assert northbound.getFlowStatus(flow.flowId).status != FlowState.IN_PROGRESS
+        }
+
+        and: "Flow eventually goes DOWN when switch officially disconnects"
+        northbound.getFlowStatus(flow.flowId).status == FlowState.DOWN
+
+        when: "Switch returns back UP"
+        lockKeeper.reviveSwitch(srcSwitch)
+        Wrappers.wait(WAIT_OFFSET) { northbound.getSwitch(srcSwitch.dpId).state == SwitchChangeType.ACTIVATED }
+
+        then: "Flow still has no path associated"
+        with(northbound.getFlowPath(flow.flowId)) {
+            forwardPath.empty
+            reversePath.empty
+        }
+
+        and: "Src and dst switch validation shows no missing rules"
+        [srcSwitch, dstSwitch].each { sw ->
+            def validation = northbound.validateSwitch(sw.dpId)
+            validation.verifyRuleSectionsAreEmpty(["missing", "proper"])
+            validation.verifyMeterSectionsAreEmpty(["missing", "misconfigured", "proper", "excess"])
+        }
+
+        when: "Try to validate flow"
+        northbound.validateFlow(flow.flowId)
+
+        then: "Error is returned, explaining that this is impossible for DOWN flows"
+        def e = thrown(HttpClientErrorException)
+        e.statusCode == HttpStatus.UNPROCESSABLE_ENTITY
+        e.responseBodyAsString.to(MessageError).errorDescription ==
+                "Could not validate flow: Flow $flow.flowId is in DOWN state"
+
+        when: "Bring switch back"
         lockKeeper.reviveSwitch(srcSwitch)
 
-        then: "The flow is UP and valid"
-        Wrappers.wait(WAIT_OFFSET) {
-            assert northbound.getFlowStatus(flow.id).status == FlowState.UP
-            northbound.validateFlow(flow.id).each { direction -> assert direction.asExpected }
+        and: "Reroute the flow"
+        def rerouteResponse = northbound.rerouteFlow(flow.flowId)
+
+        then: "Flow is rerouted and in UP state"
+        rerouteResponse.rerouted
+        Wrappers.wait(WAIT_OFFSET) { northbound.getFlowStatus(flow.flowId).status == FlowState.UP }
+
+        and: "Has a path now"
+        with(northbound.getFlowPath(flow.flowId)) {
+            !forwardPath.empty
+            !reversePath.empty
         }
 
-        and: "Rules are valid on the knocked out switch"
-        verifySwitchRules(srcSwitch.dpId)
+        and: "Can be validated"
+        northbound.validateFlow(flow.flowId).each { assert it.discrepancies.empty }
 
-        and: "Remove the flow"
-        flowHelper.deleteFlow(flow.id)
+        and: "Flow can be removed"
+        flowHelper.deleteFlow(flow.flowId)
+        //sync switch, it may have excess rules if they happen to install before it disconnects. Kilda does not handle it
+        northbound.synchronizeSwitch(srcSwitch.dpId, true)
     }
 
-    @Ignore("This is a known Kilda limitation and feature is not implemented yet.")
-    def "System can handle situation when switch reconnects while flow is being rerouted"() {
+    @Ignore("Not ready yet")
+    def "No discrepancies when target transit switch disconnects while flow is being rerouted to it"() {
         given: "A flow with alternative paths available"
-        def switchPair = topologyHelper.getAllNeighboringSwitchPairs().find { it.paths.size() > 1 } ?:
+        assumeTrue("This test is only viable for h&s reroutes", northbound.getFeatureToggles().flowsRerouteViaFlowHs)
+        def switchPair = topologyHelper.getAllNotNeighboringSwitchPairs().find { it.paths.size() > 2 } ?:
                 assumeTrue("No suiting switches found", false)
-        def flow = flowHelper.randomFlow(switchPair)
-        flowHelper.addFlow(flow)
-        def currentPath = PathHelper.convert(northbound.getFlowPath(flow.id))
+        def flow = flowHelperV2.randomFlow(switchPair)
+        northboundV2.addFlow(flow)
+        def originalPath = PathHelper.convert(northbound.getFlowPath(flow.flowId))
 
         and: "There is a more preferable alternative path"
-        def alternativePaths = switchPair.paths.findAll { it != currentPath }
-        def preferredPath = alternativePaths.first()
-        def uniqueSwitch = pathHelper.getInvolvedSwitches(preferredPath).find {
-            !pathHelper.getInvolvedSwitches(currentPath).contains(it)
+        Switch uniqueSwitch = null
+        def preferredPath = switchPair.paths.find { path ->
+            uniqueSwitch = pathHelper.getInvolvedSwitches(path).find {
+                !pathHelper.getInvolvedSwitches(originalPath).contains(it)
+            }
+            uniqueSwitch && path != originalPath
         }
-        assumeTrue("Didn't find a unique switch for alternative path", uniqueSwitch.asBoolean())
+        assert preferredPath.asBoolean(), "Didn't find a proper alternative path"
         switchPair.paths.findAll { it != preferredPath }.each { pathHelper.makePathMorePreferable(preferredPath, it) }
 
         when: "Init reroute of the flow to a better path"
-        def reroute = new Thread({ northbound.rerouteFlow(flow.id) })
-        reroute.start()
+        new Thread({
+            with(northbound.rerouteFlow(flow.flowId)) { rerouted }
+        }).start()
 
         and: "Immediately disconnect a switch on the new path"
         lockKeeper.knockoutSwitch(uniqueSwitch)
-        reroute.join()
-
-        and: "Reconnect it back in a couple of seconds"
-        TimeUnit.SECONDS.sleep(2)
-        lockKeeper.reviveSwitch(uniqueSwitch)
 
         then: "The flow is UP and valid"
-        Wrappers.wait(WAIT_OFFSET) {
-            assert northbound.getFlowStatus(flow.id).status == FlowState.UP
-            northbound.validateFlow(flow.id).each { direction -> assert direction.asExpected }
+        Wrappers.wait(WAIT_OFFSET * 3) {
+            assert northbound.getFlowStatus(flow.flowId).status == FlowState.UP
         }
+        northbound.validateFlow(flow.flowId).each { direction -> assert direction.asExpected }
 
-        and: "Rules are valid on the knocked out switch"
-        verifySwitchRules(uniqueSwitch.dpId)
+        and: "The flow did not actually change path and fell back to original path"
+        PathHelper.convert(northbound.getFlowPath(flow.flowId)) == originalPath
 
-        and: "Remove the flow and delete link props"
-        flowHelper.deleteFlow(flow.id)
+        and: "Revive switch, remove the flow and reset costs"
+        lockKeeper.reviveSwitch(uniqueSwitch)
+        Wrappers.wait(WAIT_OFFSET) { northbound.getSwitch(uniqueSwitch.dpId).state == SwitchChangeType.ACTIVATED }
+        flowHelper.deleteFlow(flow.flowId)
         northbound.deleteLinkProps(northbound.getAllLinkProps())
+        Wrappers.wait(discoveryInterval) { northbound.getAllLinks().each { it.state == IslChangeType.DISCOVERED } }
     }
 }
