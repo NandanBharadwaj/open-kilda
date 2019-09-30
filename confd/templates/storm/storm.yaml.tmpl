@@ -37,3 +37,7 @@ nimbus.childopts: "-Xmx128m"
 ui.childopts: "-Xmx128m"
 supervisor.childopts: "-Xmx128m"
 worker.childopts: "-Xmx280m"
+{{- if eq (getv "/kilda_environment_role") "local" }}
+# provides lower resource consumption but slows down storm by a little. Default value is '1'
+topology.disruptor.batch.timeout.millis: 10
+{{- end }}

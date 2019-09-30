@@ -201,7 +201,7 @@ class PortHistorySpec extends HealthCheckSpecification {
         when: "Generate antiflap statistic"
         def count = 0
         Integer intervalBetweenPortStateManipulation = (antiflapCooldown / 10).toInteger()
-        Wrappers.timedLoop(antiflapDumpingInterval * 0.9) {
+        Wrappers.timedLoop(antiflapDumpingInterval * 0.8) {
             northbound.portUp(isl.srcSwitch.dpId, isl.srcPort)
             sleep(intervalBetweenPortStateManipulation)
             northbound.portDown(isl.srcSwitch.dpId, isl.srcPort)
@@ -210,7 +210,7 @@ class PortHistorySpec extends HealthCheckSpecification {
         }
 
         then: "Antiflap statistic is available in port history"
-        Wrappers.wait(antiflapDumpingInterval * 0.1 + WAIT_OFFSET) {
+        Wrappers.wait(antiflapDumpingInterval * 0.2 + WAIT_OFFSET) {
             Long timestampAfterStat = System.currentTimeMillis()
             with(northboundV2.getPortHistory(isl.srcSwitch.dpId, isl.srcPort, timestampBefore, timestampAfterStat)) {
                 it.size() == 3 // PORT_DOWN, ANTI_FLAP_ACTIVATED, ANTI_FLAP_PERIODIC_STATS
