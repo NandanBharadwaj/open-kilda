@@ -71,6 +71,10 @@ public class Cookie implements Comparable<Cookie>, Serializable {
     public static final long MULTITABLE_POST_INGRESS_DROP_COOKIE        = 0x10L | DEFAULT_RULE_FLAG;
     public static final long MULTITABLE_EGRESS_PASS_THROUGH_COOKIE      = 0x11L | DEFAULT_RULE_FLAG;
     public static final long MULTITABLE_TRANSIT_DROP_COOKIE             = 0x12L | DEFAULT_RULE_FLAG;
+    public static final long LLDP_SWITCH_COOKIE             = 0x14L | DEFAULT_RULE_FLAG;
+    public static final long LLDP_EGRESS_SWITCH_COOKIE             = 0x15L | DEFAULT_RULE_FLAG;
+    public static final long LLDP_POST_INGRESS_COOKIE             = 0x16L | DEFAULT_RULE_FLAG;
+    public static final long LLDP_TRANSIT_COOKIE             = 0x17L | DEFAULT_RULE_FLAG;
 
     // 9 bits cookie type "field"
     public static final long TYPE_MASK                               = 0x1FF0_0000_0000_0000L;
@@ -80,6 +84,10 @@ public class Cookie implements Comparable<Cookie>, Serializable {
     public static final long MULTITABLE_ISL_VXLAN_EGRESS_RULES_TYPE  = 0x0030_0000_0000_0000L;
     public static final long MULTITABLE_ISL_VXLAN_TRANSIT_RULES_TYPE = 0x0040_0000_0000_0000L;
     public static final long MULTITABLE_INGRESS_RULES_TYPE           = 0x0050_0000_0000_0000L;
+    public static final long LLDP_SWITCH_TYPE                        = 0x0060_0000_0000_0000L;
+    public static final long LLDP_EGRESS_SWITCH_TYPE                 = 0x0070_0000_0000_0000L;
+    public static final long LLDP_POST_INGRESS_TYPE                  = 0x0080_0000_0000_0000L;
+    public static final long LLDP_TRANSIT_TYPE                       = 0x0090_0000_0000_0000L;
 
     private final long value;
 
@@ -119,6 +127,22 @@ public class Cookie implements Comparable<Cookie>, Serializable {
 
     public static long encodeIngressRulePassThrough(int port) {
         return port | Cookie.MULTITABLE_INGRESS_RULES_TYPE | Cookie.DEFAULT_RULE_FLAG;
+    }
+
+    public static long encodeIngressLldpThrough(int port) {
+        return port | Cookie.LLDP_SWITCH_TYPE | Cookie.DEFAULT_RULE_FLAG;
+    }
+
+    public static long encodePostIngressLldpThrough(int port) {
+        return port | Cookie.LLDP_POST_INGRESS_TYPE | Cookie.DEFAULT_RULE_FLAG;
+    }
+
+    public static long encodeLldpVlanEgress(int port) {
+        return port | Cookie.LLDP_EGRESS_SWITCH_TYPE | Cookie.DEFAULT_RULE_FLAG;
+    }
+
+    public static long encodeLldpTransitEgress(int port) {
+        return port | Cookie.LLDP_TRANSIT_TYPE | Cookie.DEFAULT_RULE_FLAG;
     }
 
     /**
@@ -194,6 +218,11 @@ public class Cookie implements Comparable<Cookie>, Serializable {
      */
     public static boolean isMaskedAsLldp(long value) {
         return (TYPE_MASK & value) == LLDP_COOKIE_TYPE;
+    }
+
+    public static boolean isMaskedAsSwitchLldp(long value) {
+        long v = (TYPE_MASK & value);
+        return v == LLDP_TRANSIT_TYPE || v == LLDP_POST_INGRESS_TYPE;
     }
 
     public static boolean isIslVlanEgress(long value) {

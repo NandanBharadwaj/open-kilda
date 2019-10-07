@@ -128,6 +128,7 @@ import org.projectfloodlight.openflow.protocol.instruction.OFInstruction;
 import org.projectfloodlight.openflow.protocol.instruction.OFInstructionApplyActions;
 import org.projectfloodlight.openflow.protocol.instruction.OFInstructionGotoTable;
 import org.projectfloodlight.openflow.protocol.instruction.OFInstructionMeter;
+import org.projectfloodlight.openflow.protocol.instruction.OFInstructionWriteMetadata;
 import org.projectfloodlight.openflow.protocol.match.Match;
 import org.projectfloodlight.openflow.protocol.match.Match.Builder;
 import org.projectfloodlight.openflow.protocol.match.MatchField;
@@ -140,6 +141,7 @@ import org.projectfloodlight.openflow.types.IpProtocol;
 import org.projectfloodlight.openflow.types.MacAddress;
 import org.projectfloodlight.openflow.types.OFBufferId;
 import org.projectfloodlight.openflow.types.OFGroup;
+import org.projectfloodlight.openflow.types.OFMetadata;
 import org.projectfloodlight.openflow.types.OFPort;
 import org.projectfloodlight.openflow.types.OFVlanVidMatch;
 import org.projectfloodlight.openflow.types.TableId;
@@ -189,10 +191,13 @@ public class SwitchManager implements IFloodlightModule, IFloodlightService, ISw
     public static final int ISL_EGRESS_VXLAN_RULE_PRIORITY_MULTITABLE = FLOW_PRIORITY - 1;
     public static final int ISL_TRANSIT_VXLAN_RULE_PRIORITY_MULTITABLE = FLOW_PRIORITY - 2;
     public static final int INGRESS_CUSTOMER_PORT_RULE_PRIORITY_MULTITABLE = FLOW_PRIORITY - 2;
+    public static final int SWITCH_LLDP_PRE_INGRESS_PRIORITY = INGRESS_CUSTOMER_PORT_RULE_PRIORITY_MULTITABLE + 1;
+    public static final int SWITCH_LLDP_TRANSIT_PRIORITY = FLOW_PRIORITY - 1;
     public static final int ISL_EGRESS_VLAN_RULE_PRIORITY_MULTITABLE = FLOW_PRIORITY - 2;
     public static final int DEFAULT_FLOW_PRIORITY = FLOW_PRIORITY - 1;
     public static final int MINIMAL_POSITIVE_PRIORITY = FlowModUtils.PRIORITY_MIN + 1;
 
+    public static final int CATCH_LLDP = 0x1000;
     public static final int BDF_DEFAULT_PORT = 3784;
     public static final int ROUND_TRIP_LATENCY_GROUP_ID = 1;
     public static final MacAddress STUB_VXLAN_ETH_DST_MAC = MacAddress.of(0xFFFFFFEDCBA2L);
@@ -1550,6 +1555,26 @@ public class SwitchManager implements IFloodlightModule, IFloodlightService, ISw
         return flowMod.getCookie().getValue();
     }
 
+    @Override
+    public long installTransitLldpRule(DatapathId dpid, int port) throws SwitchOperationException {
+        IOFSwitch sw = lookupSwitch(dpid);
+        OFFactory ofFactory = sw.getOFFactory();
+        OFFlowMod flowMod = buildLldpTransitIslVlanRule(ofFactory, dpid, port);
+        String flowName = "--Isl TRANSIT egress rule for VLAN--" + dpid.toString();
+        pushFlow(sw, flowName, flowMod);
+        return flowMod.getCookie().getValue();
+    }
+
+    @Override
+    public long installLldpEgressIslVlanRule(DatapathId dpid, int port) throws SwitchOperationException {
+        IOFSwitch sw = lookupSwitch(dpid);
+        OFFactory ofFactory = sw.getOFFactory();
+        OFFlowMod flowMod = buildLldpEgressIslVlanRule(ofFactory, port);
+        String flowName = "--Isl LLDP egress rule for VLAN--" + dpid.toString();
+        pushFlow(sw, flowName, flowMod);
+        return flowMod.getCookie().getValue();
+    }
+
     private OFFlowMod buildEgressIslVlanRule(OFFactory ofFactory, DatapathId dpid, int port) {
         Match match = buildInPortMatch(port, ofFactory);
         OFInstructionGotoTable goToTable = ofFactory.instructions().gotoTable(TableId.of(EGRESS_TABLE_ID));
@@ -1558,6 +1583,39 @@ public class SwitchManager implements IFloodlightModule, IFloodlightService, ISw
                 ISL_EGRESS_VLAN_RULE_PRIORITY_MULTITABLE, INPUT_TABLE_ID)
                 .setMatch(match)
                 .setInstructions(ImmutableList.of(goToTable)).build();
+    }
+
+    private OFFlowMod buildLldpEgressIslVlanRule(OFFactory ofFactory, int port) {
+        Match match = ofFactory.buildMatch()
+                .setExact(MatchField.IN_PORT, OFPort.of(port))
+                .setExact(MatchField.ETH_DST, MacAddress.of(LLDP_MAC))
+                .setExact(MatchField.ETH_TYPE, EthType.LLDP)
+                .build();
+        OFInstructionWriteMetadata writeMetadata = ofFactory.instructions().buildWriteMetadata()
+                .setMetadata(U64.of(CATCH_LLDP))
+                .setMetadataMask(U64.of(CATCH_LLDP)).build();
+        OFInstructionGotoTable goToTable = ofFactory.instructions().gotoTable(TableId.of(EGRESS_TABLE_ID));
+        return prepareFlowModBuilder(
+                ofFactory, Cookie.encodeLldpVlanEgress(port),
+                ISL_EGRESS_VLAN_RULE_PRIORITY_MULTITABLE + 1, INPUT_TABLE_ID)
+                .setMatch(match)
+                .setInstructions(ImmutableList.of(goToTable, writeMetadata)).build();
+    }
+
+
+    private OFFlowMod buildLldpTransitIslVlanRule(OFFactory ofFactory, DatapathId dpid, int port)
+            throws SwitchNotFoundException {
+        IOFSwitch sw = lookupSwitch(dpid);
+        Match match = ofFactory.buildMatch()
+                .setExact(MatchField.IN_PORT, OFPort.of(port))
+                .setMasked(MatchField.METADATA, OFMetadata.ofRaw(CATCH_LLDP), OFMetadata.ofRaw(CATCH_LLDP))
+                .build();
+        return prepareFlowModBuilder(
+                ofFactory, Cookie.encodeLldpTransitEgress(port),
+                SWITCH_LLDP_TRANSIT_PRIORITY, TRANSIT_TABLE_ID)
+                .setMatch(match)
+                .setActions(ImmutableList.of(actionSendToController(sw)))
+                .build();
     }
 
     @Override
@@ -1580,6 +1638,24 @@ public class SwitchManager implements IFloodlightModule, IFloodlightService, ISw
         IOFSwitch sw = lookupSwitch(dpid);
         OFFlowMod flowMod = buildIntermediateIngressRule(dpid, port);
         String flowName = "--Customer Port intermediate rule--" + dpid.toString();
+        pushFlow(sw, flowName, flowMod);
+        return flowMod.getCookie().getValue();
+    }
+
+    @Override
+    public long installSwitchLldpIngressRule(DatapathId dpid, int port) throws SwitchOperationException {
+        IOFSwitch sw = lookupSwitch(dpid);
+        OFFlowMod flowMod = buildLldpIngressRule(dpid, port);
+        String flowName = "--Customer LLDP Port intermediate rule--" + dpid.toString();
+        pushFlow(sw, flowName, flowMod);
+        return flowMod.getCookie().getValue();
+    }
+
+    @Override
+    public long installSwitchLldpPostIngressRule(DatapathId dpid, int port) throws SwitchOperationException {
+        IOFSwitch sw = lookupSwitch(dpid);
+        OFFlowMod flowMod = buildLldpPostIngressRule(dpid, port);
+        String flowName = "--Customer LLDP POST Port intermediate rule--" + dpid.toString();
         pushFlow(sw, flowName, flowMod);
         return flowMod.getCookie().getValue();
     }
@@ -1613,6 +1689,48 @@ public class SwitchManager implements IFloodlightModule, IFloodlightService, ISw
                 .setMatch(match)
                 .setInstructions(ImmutableList.of(goToTable)).build();
     }
+
+    @Override
+    public OFFlowMod buildLldpIngressRule(DatapathId dpid, int port) throws SwitchNotFoundException {
+        IOFSwitch sw = lookupSwitch(dpid);
+        OFFactory ofFactory = sw.getOFFactory();
+
+        Match match = ofFactory.buildMatch()
+                .setExact(MatchField.IN_PORT, OFPort.of(port))
+                .setExact(MatchField.ETH_DST, MacAddress.of(LLDP_MAC))
+                .setExact(MatchField.ETH_TYPE, EthType.LLDP)
+                .build();
+
+        OFInstructionWriteMetadata writeMetadata = ofFactory.instructions().buildWriteMetadata()
+                .setMetadata(U64.of(CATCH_LLDP))
+                .setMetadataMask(U64.of(CATCH_LLDP)).build();
+
+        OFInstructionGotoTable goToTable = ofFactory.instructions().gotoTable(TableId.of(INGRESS_TABLE_ID));
+        return prepareFlowModBuilder(
+                ofFactory, Cookie.encodeIngressLldpThrough(port),
+                SWITCH_LLDP_PRE_INGRESS_PRIORITY, INPUT_TABLE_ID)
+                .setMatch(match)
+                .setInstructions(ImmutableList.of(goToTable, writeMetadata)).build();
+    }
+
+    @Override
+    public OFFlowMod buildLldpPostIngressRule(DatapathId dpid, int port) throws SwitchNotFoundException {
+        IOFSwitch sw = lookupSwitch(dpid);
+        OFFactory ofFactory = sw.getOFFactory();
+
+        Match match = ofFactory.buildMatch()
+                .setExact(MatchField.IN_PORT, OFPort.of(port))
+                .setMasked(MatchField.METADATA, OFMetadata.ofRaw(CATCH_LLDP), OFMetadata.ofRaw(CATCH_LLDP))
+                .build();
+
+        return prepareFlowModBuilder(
+                ofFactory, Cookie.encodePostIngressLldpThrough(port),
+                SWITCH_LLDP_PRE_INGRESS_PRIORITY, POST_INGRESS_TABLE_ID)
+                .setMatch(match)
+                .setActions(ImmutableList.of(actionSendToController(sw)))
+                .build();
+    }
+
 
     @Override
     public Long installPreIngressTablePassThroughDefaultRule(DatapathId dpid) throws SwitchOperationException {
@@ -1655,6 +1773,8 @@ public class SwitchManager implements IFloodlightModule, IFloodlightService, ISw
             logger.info("Skip installation of isl multitable vxlan rule for switch {} {}", dpid, port);
         }
         installedRules.add(installEgressIslVlanRule(dpid, port));
+        installedRules.add(installLldpEgressIslVlanRule(dpid, port));
+        installedRules.add(installTransitLldpRule(dpid, port));
         return installedRules;
     }
 

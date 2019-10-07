@@ -369,6 +369,8 @@ class RecordHandler implements Runnable {
         DatapathId dpid = DatapathId.of(command.getSwitchId().toLong());
         if (command.isMultiTable()) {
             context.getSwitchManager().installIntermediateIngressRule(dpid, command.getInputPort());
+            context.getSwitchManager().installSwitchLldpIngressRule(dpid, command.getInputPort());
+            context.getSwitchManager().installSwitchLldpPostIngressRule(dpid, command.getInputPort());
         }
         context.getSwitchManager().installIngressFlow(
                 dpid,

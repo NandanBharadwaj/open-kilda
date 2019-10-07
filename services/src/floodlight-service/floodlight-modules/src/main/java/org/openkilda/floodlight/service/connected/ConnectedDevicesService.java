@@ -67,8 +67,16 @@ public class ConnectedDevicesService implements IService, IInputTranslator {
     private void handlePacketIn(OfInput input) {
         U64 rawCookie = input.packetInCookie();
 
-        if (rawCookie == null || !Cookie.isMaskedAsLldp(rawCookie.getValue())) {
+        if (rawCookie != null) {
+            logger.error("LLDP cookie:{}", rawCookie.getValue());
+        }
+        if (rawCookie == null
+                || !(Cookie.isMaskedAsLldp(rawCookie.getValue())
+                || Cookie.isMaskedAsSwitchLldp(rawCookie.getValue()))) {
             return;
+        }
+        if (Cookie.isMaskedAsSwitchLldp(rawCookie.getValue())) {
+            logger.error("GOT SWITCH LLDP");
         }
 
         long cookie = rawCookie.getValue();

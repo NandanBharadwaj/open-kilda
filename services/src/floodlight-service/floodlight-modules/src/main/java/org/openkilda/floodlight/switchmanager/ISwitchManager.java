@@ -179,6 +179,24 @@ public interface ISwitchManager extends IFloodlightService {
     long installEgressIslVlanRule(final DatapathId dpid, int port) throws SwitchOperationException;
 
     /**
+     * Install intermediate rule for isl on switch in table 0 to route egress in case of vlan.
+     *
+     * @param dpid datapathId of the switch
+     * @param port isl port
+     * @throws SwitchOperationException Switch not found
+     */
+    long installTransitLldpRule(DatapathId dpid, int port) throws SwitchOperationException;
+
+    /**
+     * Install intermediate rule for isl on switch in table 0 to route egress in case of vlan.
+     *
+     * @param dpid datapathId of the switch
+     * @param port isl port
+     * @throws SwitchOperationException Switch not found
+     */
+    long installLldpEgressIslVlanRule(DatapathId dpid, int port) throws SwitchOperationException;
+
+    /**
      * Remove intermediate rule for isl on switch in table 0 to route egress in case of vlan.
      *
      * @param dpid datapathId of the switch
@@ -186,7 +204,6 @@ public interface ISwitchManager extends IFloodlightService {
      * @throws SwitchOperationException Switch not found
      */
     long removeEgressIslVlanRule(final DatapathId dpid, int port) throws SwitchOperationException;
-
 
     /**
      * Install intermediate rule for isl on switch in table 0 to route ingress traffic.
@@ -196,6 +213,24 @@ public interface ISwitchManager extends IFloodlightService {
      * @throws SwitchOperationException Switch not found
      */
     long installIntermediateIngressRule(final DatapathId dpid, int port) throws SwitchOperationException;
+
+    /**
+     * Install intermediate rule for isl on switch in table 0 to route ingress traffic.
+     *
+     * @param dpid datapathId of the switch
+     * @param port customer port
+     * @throws SwitchOperationException Switch not found
+     */
+    long installSwitchLldpIngressRule(DatapathId dpid, int port) throws SwitchOperationException;
+
+    /**
+     * Install intermediate rule for isl on switch in table 0 to route ingress traffic.
+     *
+     * @param dpid datapathId of the switch
+     * @param port customer port
+     * @throws SwitchOperationException Switch not found
+     */
+    long installSwitchLldpPostIngressRule(DatapathId dpid, int port) throws SwitchOperationException;
 
     /**
      * Remove intermediate rule for isl on switch in table 0 to route ingress traffic.
@@ -214,6 +249,26 @@ public interface ISwitchManager extends IFloodlightService {
      * @return modification command
      */
     OFFlowMod buildIntermediateIngressRule(DatapathId dpid, int port) throws SwitchNotFoundException;
+
+
+    /**
+     * Build intermidiate flowmod for ingress rule.
+     *
+     * @param dpid switch id
+     * @param port port
+     * @return modification command
+     */
+    OFFlowMod buildLldpIngressRule(DatapathId dpid, int port) throws SwitchNotFoundException;
+
+    /**
+     * Build intermidiate flowmod for ingress rule.
+     *
+     * @param dpid switch id
+     * @param port port
+     * @return modification command
+     */
+
+    OFFlowMod buildLldpPostIngressRule(DatapathId dpid, int port) throws SwitchNotFoundException;
 
     /**
      * Install default pass through rule for pre ingress table.

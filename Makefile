@@ -56,8 +56,8 @@ update-msg:
 update: update-parent update-core update-msg update-pce
 
 compile:
-	$(MAKE) -C services/src
-	$(MAKE) -C services/wfm all-in-one
+	$(MAKE) build-no-test -C services/src
+	$(MAKE) build-no-test -C services/wfm all-in-one
 	$(MAKE) -C services/lab-service/lab test
 
 .PHONY: unit
