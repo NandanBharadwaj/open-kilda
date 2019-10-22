@@ -22,8 +22,10 @@ import spock.lang.See
 import spock.lang.Shared
 import spock.lang.Unroll
 
-@See(["https://github.com/telstra/open-kilda/blob/issue/port-history-stats/docs/design/network-discovery/port-FSM.png",
-        "https://github.com/telstra/open-kilda/blob/issue/port-history-stats/docs/design/network-discovery/AF-FSM.png"])
+import java.util.concurrent.TimeUnit
+
+@See(["https://github.com/telstra/open-kilda/blob/develop/docs/design/network-discovery/port-FSM.png",
+        "https://github.com/telstra/open-kilda/blob/develop/docs/design/network-discovery/AF-FSM.png"])
 @Narrative("Verify that port history is created for the port up/down actions.")
 class PortHistorySpec extends HealthCheckSpecification {
     @Autowired
@@ -200,12 +202,12 @@ class PortHistorySpec extends HealthCheckSpecification {
 
         when: "Generate antiflap statistic"
         def count = 0
-        Integer intervalBetweenPortStateManipulation = (antiflapCooldown / 10).toInteger()
+        Integer intervalBetweenPortStateManipulation = (antiflapCooldown / 10).toInteger() ?: 1
         Wrappers.timedLoop(antiflapDumpingInterval * 0.9) {
             northbound.portUp(isl.srcSwitch.dpId, isl.srcPort)
-            sleep(intervalBetweenPortStateManipulation)
+            TimeUnit.SECONDS.sleep(intervalBetweenPortStateManipulation)
             northbound.portDown(isl.srcSwitch.dpId, isl.srcPort)
-            sleep(intervalBetweenPortStateManipulation)
+            TimeUnit.SECONDS.sleep(intervalBetweenPortStateManipulation)
             count += 1
         }
 
